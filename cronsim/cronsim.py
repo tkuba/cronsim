@@ -5,6 +5,7 @@ from datetime import date, datetime, time
 from datetime import timedelta as td
 from datetime import timezone
 from enum import IntEnum
+from math import floor
 from typing import Set, Tuple, Union, cast
 
 UTC = timezone.utc
@@ -69,6 +70,14 @@ class Field(IntEnum):
             for term in s.split(","):
                 result.update(self.parse(term))
             return result
+
+        if self == Field.DAY and "B" in s:
+            value = s[:-1]
+            if not value.isdigit():
+                raise CronSimError(self.msg())
+
+            dom = self.int(s[:-1])
+            return {(dom, CronSim.BUSINESSDAY)}
 
         if self == Field.DOW and "L" in s:
             value = s[:-1]
@@ -147,6 +156,7 @@ def last_weekday(year: int, month: int) -> int:
 class CronSim(object):
     LAST = -1000
     LAST_WEEKDAY = -1001
+    BUSINESSDAY = -1002
 
     def __init__(self, expr: str, dt: datetime):
         self.dt = dt.replace(second=0, microsecond=0)
@@ -162,13 +172,20 @@ class CronSim(object):
 
         self.minutes = cast(Set[int], Field.MINUTE.parse(self.parts[0]))
         self.hours = cast(Set[int], Field.HOUR.parse(self.parts[1]))
-        self.days = cast(Set[int], Field.DAY.parse(self.parts[2]))
+        self.days = Field.DAY.parse(self.parts[2])
         self.months = cast(Set[int], Field.MONTH.parse(self.parts[3]))
         self.weekdays = Field.DOW.parse(self.parts[4])
 
-        if len(self.days) and min(self.days) > 29:
+        int_days = set(filter(lambda d: isinstance(d, int), self.days))
+        if len(int_days) and min(int_days) > 29:
             # Check if we have any month with enough days
-            if min(self.days) > max(DAYS_IN_MONTH[month] for month in self.months):
+            if max(self.days) > max(DAYS_IN_MONTH[month] for month in self.months):
+                raise CronSimError(Field.DAY.msg())
+
+        tuple_days = set(filter(lambda d: isinstance(d, tuple), self.days))
+        for (dom, self.BUSINESSDAY) in tuple_days:
+            # Check if the business day is not above max
+            if dom > 23:
                 raise CronSimError(Field.DAY.msg())
 
         self.fixup_tz = None
@@ -239,6 +256,18 @@ class CronSim(object):
         return True
 
     def match_dom(self, d: date) -> bool:
+        month_start = date(d.year, d.month, 1).weekday()
+        ref_weeks = floor((month_start + d.day) / 7)
+        # if month starts on SAT, then we add 1 weekend day and the rest count as 2-day weekend
+        weekend_days = 1 + max(0, (ref_weeks - 1)) * 2 if month_start == 6 else ref_weeks * 2
+
+        dom = d.day - weekend_days
+        if (dom, self.BUSINESSDAY) in self.days:
+            total_days_from_prev_monday = month_start + dom + weekend_days
+            if (total_days_from_prev_monday % 7 not in {0, 6}
+                    and d.day == dom + weekend_days):
+                return True
+
         """Return True is day-of-month matches."""
         if d.day in self.days:
             return True

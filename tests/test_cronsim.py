@@ -77,6 +77,14 @@ class TestParse(unittest.TestCase):
         w = CronSim("* * lw * *", NOW)
         self.assertEqual(w.days, {CronSim.LAST_WEEKDAY})
 
+    def test_it_parses_day_work_day(self) -> None:
+        w = CronSim("* * 4B * *", NOW)
+        self.assertEqual(w.days, {(4, CronSim.BUSINESSDAY)})
+
+    def test_it_parses_day_lowercase_work_day(self) -> None:
+        w = CronSim("* * 4b * *", NOW)
+        self.assertEqual(w.days, {(4, CronSim.BUSINESSDAY)})
+
     def test_it_parses_unrestricted_day_restricted_dow(self) -> None:
         w = CronSim("* * * * 1", NOW)
         self.assertEqual(w.days, set(range(1, 32)))
@@ -208,6 +216,10 @@ class TestValidation(unittest.TestCase):
         with self.assertRaisesRegex(CronSimError, "Bad day-of-month"):
             CronSim("* * 31 4 *", NOW)
 
+    def test_it_checks_business_day_of_month_range(self) -> None:
+        with self.assertRaisesRegex(CronSimError, "Bad day-of-month"):
+            CronSim("* * 30B 1 *", NOW)
+
     def test_it_rejects_dow_l_range(self) -> None:
         with self.assertRaisesRegex(CronSimError, "Bad day-of-week"):
             CronSim("* * * * 5L-6", NOW)
@@ -226,6 +238,45 @@ class TestValidation(unittest.TestCase):
 
 
 class TestIterator(unittest.TestCase):
+    def test_it_handles_b_same_week(self) -> None:
+        dt = next(CronSim("1 1 2B * *", NOW))
+        self.assertEqual(dt.isoformat(), "2020-01-02T01:01:00")
+
+    def test_it_handles_b_next_week(self) -> None:
+        dt = next(CronSim("1 1 4B * *", NOW))
+        self.assertEqual(dt.isoformat(), "2020-01-06T01:01:00")
+
+    def test_it_handles_b_eom(self) -> None:
+        dt = next(CronSim("1 1 22B * *", NOW))
+        self.assertEqual(dt.isoformat(), "2020-01-30T01:01:00")
+        dt = next(CronSim("1 1 23B * *", NOW))
+        self.assertEqual(dt.isoformat(), "2020-01-31T01:01:00")
+
+        with self.assertRaisesRegex(CronSimError, "Bad day-of-month"):
+            CronSim("1 1 24B * *", NOW)
+
+    def test_it_handles_bs_monthly(self) -> None:
+        it = CronSim("1 1 1B * *", NOW)
+        self.assertEqual(next(it).isoformat(), "2020-01-01T01:01:00")
+        self.assertEqual(next(it).isoformat(), "2020-02-03T01:01:00")
+        self.assertEqual(next(it).isoformat(), "2020-03-02T01:01:00")
+        self.assertEqual(next(it).isoformat(), "2020-04-01T01:01:00")
+        self.assertEqual(next(it).isoformat(), "2020-05-01T01:01:00")
+        self.assertEqual(next(it).isoformat(), "2020-06-01T01:01:00")
+        self.assertEqual(next(it).isoformat(), "2020-07-01T01:01:00")
+        self.assertEqual(next(it).isoformat(), "2020-08-03T01:01:00")
+        self.assertEqual(next(it).isoformat(), "2020-09-01T01:01:00")
+        self.assertEqual(next(it).isoformat(), "2020-10-01T01:01:00")
+        self.assertEqual(next(it).isoformat(), "2020-11-02T01:01:00")
+        self.assertEqual(next(it).isoformat(), "2020-12-01T01:01:00")
+
+    def test_it_handles_bs_seq(self) -> None:
+        it = CronSim("1 1 4B,6B * *", NOW)
+        self.assertEqual(next(it).isoformat(), "2020-01-06T01:01:00")
+        self.assertEqual(next(it).isoformat(), "2020-01-08T01:01:00")
+        self.assertEqual(next(it).isoformat(), "2020-02-06T01:01:00")
+        self.assertEqual(next(it).isoformat(), "2020-02-10T01:01:00")
+
     def test_it_handles_l(self) -> None:
         dt = next(CronSim("1 1 L * *", NOW))
         self.assertEqual(dt.isoformat(), "2020-01-31T01:01:00")
