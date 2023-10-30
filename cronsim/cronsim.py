@@ -256,15 +256,15 @@ class CronSim(object):
         return True
 
     def match_dom(self, d: date) -> bool:
-        month_start = date(d.year, d.month, 1).weekday()
-        ref_weeks = floor((month_start + d.day) / 7)
+        month_start_weekday = date(d.year, d.month, 1).weekday()
+        ref_weeks = floor((month_start_weekday + d.day) / 7)
         # if month starts on SAT, then we add 1 weekend day and the rest count as 2-day weekend
-        weekend_days = 1 + max(0, (ref_weeks - 1)) * 2 if month_start == 6 else ref_weeks * 2
+        weekend_days = 1 + max(0, (ref_weeks - 1)) * 2 if month_start_weekday == 6 else ref_weeks * 2
 
         dom = d.day - weekend_days
         if (dom, self.BUSINESSDAY) in self.days:
-            total_days_from_prev_monday = month_start + dom + weekend_days
-            if (total_days_from_prev_monday % 7 not in {0, 6}
+            # total_days_from_prev_monday = month_start_weekday + dom + weekend_days
+            if (d.isoweekday() not in {6, 7}
                     and d.day == dom + weekend_days):
                 return True
 
